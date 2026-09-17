@@ -10,22 +10,23 @@ from collections import defaultdict
 
 
 def read_web_log(path):
-    # pulls out the fields we care about from each line in web.log
+    # pulls out the fields we need from each line in web.log
     requests = []
-    for line in open(path):
-        path_match = re.search(r"path=(\S*)", line)
-        id_match = re.search(r"request_id=(\S+)", line)
-        user_match = re.search(r"user_id=(\d+)", line)
+    with open(path) as file:
+        for line in file:
+            path_match = re.search(r"path=(\S*)", line)
+            id_match = re.search(r"request_id=(\S+)", line)
+            user_match = re.search(r"user_id=(\d+)", line)
 
-        if not (path_match and id_match):
-            continue
+            if not (path_match and id_match):
+                continue
 
-        requests.append({
-            "timestamp": line[:23],
-            "path": path_match.group(1),
-            "request_id": id_match.group(1),
-            "user_id": user_match.group(1) if user_match else None,
-        })
+            requests.append({
+                "timestamp": line[:23],
+                "path": path_match.group(1),
+                "request_id": id_match.group(1),
+                "user_id": user_match.group(1) if user_match else None,
+            })
     return requests
 
 
@@ -35,25 +36,26 @@ def read_worker_log(path):
     completed = {}
     failed = {}
 
-    for line in open(path):
-        id_match = re.search(r"request_id=(\S+)", line)
-        if not id_match:
-            continue
+    with open(path) as file:
+        for line in file:
+            id_match = re.search(r"request_id=(\S+)", line)
+            if not id_match:
+                continue
 
-        request_id = id_match.group(1)
-        timestamp = line[:23]
+            request_id = id_match.group(1)
+            timestamp = line[:23]
 
-        if "job completed" in line:
-            completed[request_id] = timestamp
+            if "job completed" in line:
+                completed[request_id] = timestamp
 
-        elif "upstream call failed" in line:
-            error_match = re.search(r"err=(\S+)", line)
-            host_match = re.search(r"upstream=(\S+)", line)
-            failed[request_id] = {
-                "timestamp": timestamp,
-                "error": error_match.group(1) if error_match else None,
-                "host": host_match.group(1) if host_match else None,
-            }
+            elif "upstream call failed" in line:
+                error_match = re.search(r"err=(\S+)", line)
+                host_match = re.search(r"upstream=(\S+)", line)
+                failed[request_id] = {
+                    "timestamp": timestamp,
+                    "error": error_match.group(1) if error_match else None,
+                    "host": host_match.group(1) if host_match else None,
+                }
 
     return completed, failed
 
@@ -88,12 +90,27 @@ def main():
     stuck_checkouts.sort(key=lambda r: r["timestamp"])
 
     print()
-    print(f"first stuck checkout: {stuck_checkouts[0]['timestamp']} (request_id={stuck_checkouts[0]['request_id']})")
-    print(f"last stuck checkout:  {stuck_checkouts[-1]['timestamp']} (request_id={stuck_checkouts[-1]['request_id']})")
+
+    if not stuck_checkouts:
+        print("no stuck checkouts found")
+        return
+
+    print(
+        f"first stuck checkout: {stuck_checkouts[0]['timestamp']} "
+        f"(request_id={stuck_checkouts[0]['request_id']})"
+    )
+    print(
+        f"last stuck checkout:  {stuck_checkouts[-1]['timestamp']} "
+        f"(request_id={stuck_checkouts[-1]['request_id']})"
+    )
     print(f"total stuck checkouts: {len(stuck_checkouts)}")
 
     # check whether these all line up with an "upstream call failed" error
-    matching_errors = [failed[r["request_id"]] for r in stuck_checkouts if r["request_id"] in failed]
+    matching_errors = [
+        failed[r["request_id"]]
+        for r in stuck_checkouts
+        if r["request_id"] in failed
+    ]
     error_types = {e["error"] for e in matching_errors}
     hosts = {e["host"] for e in matching_errors}
 
